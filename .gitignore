@@ -1,0 +1,37 @@
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local editor settings may contain machine-specific absolute paths
+.vscode/
+.idea/
+
+# Runtime data contains biometric images, templates, audit records, and credentials
+data/
+
+docs/
+
+# Model weights are large and may have separate redistribution licenses
+models/**/*.onnx
+models/**/*.hef
+models/**/*.tflite
+models/**/*.pth
+models/**/*.pt
+models/**/*.zip
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Operating-system files
+Thumbs.db
+.DS_Store

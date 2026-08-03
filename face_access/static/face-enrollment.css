@@ -1,0 +1,164 @@
+.enroll-dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-width: 920px;
+}
+
+.enroll-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  padding: 3px;
+  background: var(--paper);
+}
+
+.enroll-mode {
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 600 14px/1 inherit;
+  cursor: pointer;
+}
+
+.enroll-mode.active {
+  background: var(--surface);
+  color: var(--green);
+  box-shadow: 0 1px 5px rgba(24, 34, 29, .1);
+}
+
+.enroll-camera-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(210px, .7fr);
+  gap: 18px;
+}
+
+.capture-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #111713;
+}
+
+.capture-stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.capture-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 5px;
+  color: #d8ded9;
+  background: #111713;
+}
+
+.capture-placeholder span {
+  font-size: 13px;
+  color: #9eaaa3;
+}
+
+.capture-guide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34%;
+  height: 76%;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(226, 255, 112, .75);
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, .12);
+  pointer-events: none;
+}
+
+.capture-console {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.capture-console strong {
+  font: 700 24px/1.15 Georgia, serif;
+}
+
+.capture-console > span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.capture-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.capture-list {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.capture-item {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  border: 1px dashed var(--line);
+  background: var(--paper);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.capture-item > span {
+  font: 700 18px/1 Georgia, serif;
+}
+
+.capture-item img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.capture-item small {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px 4px;
+  background: rgba(17, 23, 19, .82);
+  color: #fff;
+  font-size: 10px;
+  text-align: center;
+}
+
+.capture-item.complete {
+  border-style: solid;
+  border-color: var(--green);
+}
+
+@media (max-width: 720px) {
+  .enroll-camera-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .capture-console {
+    min-height: 150px;
+  }
+
+  .capture-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

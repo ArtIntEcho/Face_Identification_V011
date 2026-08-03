@@ -1,0 +1,69 @@
+.auth-overlay {
+  position: absolute;
+  z-index: 3;
+  top: 22px;
+  left: 50%;
+  width: min(680px, calc(100% - 44px));
+  transform: translateX(-50%);
+  padding: 16px 20px 14px;
+  background: rgba(17, 23, 19, .88);
+  border-top: 3px solid var(--signal);
+  color: #fff;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+
+.auth-overlay-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--signal);
+  font: 700 12px/1 monospace;
+  letter-spacing: 0;
+}
+
+.auth-overlay strong {
+  display: block;
+  margin: 10px 0 5px;
+  font: 700 30px/1.15 Georgia, serif;
+  letter-spacing: 0;
+}
+
+.auth-overlay small {
+  color: #cbd4ce;
+  font-size: 13px;
+}
+
+.auth-progress {
+  height: 4px;
+  margin-top: 13px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .18);
+}
+
+.auth-progress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--signal);
+  transition: width .2s linear;
+}
+
+.auth-overlay[data-status="accepted"] {
+  border-top-color: #75e2aa;
+}
+
+.auth-overlay[data-status="rejected"] {
+  border-top-color: #ff8e82;
+}
+
+@media (max-width: 600px) {
+  .auth-overlay {
+    top: 12px;
+    width: calc(100% - 24px);
+    padding: 12px 14px;
+  }
+
+  .auth-overlay strong {
+    font-size: 22px;
+  }
+}

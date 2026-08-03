@@ -1,0 +1,46 @@
+{
+  "target": "hailo8",
+  "toolchain_reference": "Hailo Model Zoo v2.19.0",
+  "models": {
+    "face_detection": {
+      "network_name": "scrfd_500m",
+      "pc_artifact": "scrfd_500m/scrfd_500m_bnkps.onnx",
+      "input": "1x3x640x640",
+      "source": "https://github.com/deepinsight/insightface",
+      "hailo_pretrained": "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/FaceDetection/scrfd/scrfd_500m/pretrained/2022-09-07/scrfd_500m.zip",
+      "hailo8_hef": "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.19.0/hailo8/scrfd_500m.hef"
+    },
+    "face_recognition": {
+      "network_name": "arcface_mobilefacenet",
+      "pc_artifact": "arcface_mobilefacenet/mbf.onnx",
+      "input": "1x3x112x112",
+      "source": "https://github.com/deepinsight/insightface",
+      "hailo_pretrained": "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/FaceRecognition/arcface/arcface_mobilefacenet/pretrained/2022-08-24/arcface_mobilefacenet.zip",
+      "hailo8_hef": "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.19.0/hailo8/arcface_mobilefacenet.hef"
+    },
+    "face_landmarks": {
+      "network_name": "face_landmarks_lite",
+      "pc_artifact": "face_landmarks_lite/face_landmarks_lite.tflite",
+      "input": "1x192x192x3",
+      "source": "https://github.com/google-ai-edge/mediapipe",
+      "hailo_pretrained": "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/FaceLandmarks3d/mediapipe/face_landmarks_lite/pretrained/2025-02-04/face_landmarks_lite.zip",
+      "hailo8_hef": "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.19.0/hailo8/face_landmarks_lite.hef"
+    },
+    "passive_liveness": {
+      "network_name": "minifasnet_fusion",
+      "pc_artifacts": [
+        "minifasnet/2.7_80x80_MiniFASNetV2.onnx",
+        "minifasnet/4_0_0_80x80_MiniFASNetV1SE.onnx"
+      ],
+      "input": "1x3x80x80",
+      "input_preprocessing": "BGR float32 in the original 0-255 range; scales 2.7 and 4.0",
+      "output": "1x3 logits; class index 1 is real",
+      "source": "https://github.com/minivision-ai/Silent-Face-Anti-Spoofing",
+      "license": "Apache-2.0",
+      "export_script": "tools/export_minifasnet.py",
+      "hailo8_status": "Requires custom DFC quantization, compilation, and physical attack validation"
+    }
+  },
+  "licensing_notice": "Hailo Model Zoo code is MIT and MediaPipe is Apache-2.0. InsightFace pretrained model licensing must be reviewed and approved before commercial deployment; do not treat this prototype manifest as a commercial model license grant.",
+  "pad_notice": "MiniFASNet RGB PAD is integrated on PC but its threshold and attack resistance remain provisional until physical print, screen, and replay attack validation."
+}
