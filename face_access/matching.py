@@ -32,6 +32,13 @@ def decode_embedding(value: bytes) -> list[float]:
 def find_best_match(
     probe: Iterable[float], templates: Iterable[tuple[str, bytes]], threshold: float
 ) -> Match | None:
+    best = find_best_candidate(probe, templates)
+    return best if best is not None and best.similarity >= threshold else None
+
+
+def find_best_candidate(
+    probe: Iterable[float], templates: Iterable[tuple[str, bytes]]
+) -> Match | None:
     normalized_probe = normalize_embedding(probe)
     best: Match | None = None
     for person_id, encoded in templates:
@@ -41,4 +48,4 @@ def find_best_match(
         similarity = sum(left * right for left, right in zip(normalized_probe, enrolled, strict=True))
         if best is None or similarity > best.similarity:
             best = Match(person_id=person_id, similarity=similarity)
-    return best if best is not None and best.similarity >= threshold else None
+    return best

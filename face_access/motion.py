@@ -16,6 +16,8 @@ from face_access.liveness import TurnDirection
 class FaceMotion:
     eye_aspect_ratio: float
     turn_direction: TurnDirection | None
+    yaw_ratio: float | None = None
+    pitch_ratio: float | None = None
 
 
 class MotionAnalyzer(Protocol):
@@ -50,12 +52,9 @@ class MediaPipeMotionAnalyzer:
         right_cheek_x = landmarks[454].x
         face_width = max(right_cheek_x - left_cheek_x, 1e-6)
         yaw_ratio = (landmarks[1].x - (left_cheek_x + right_cheek_x) / 2) / face_width
-        turn = None
-        if yaw_ratio < -0.08:
-            turn = TurnDirection.LEFT
-        elif yaw_ratio > 0.08:
-            turn = TurnDirection.RIGHT
-        return FaceMotion((left_eye + right_eye) / 2, turn)
+        face_height = max(landmarks[152].y - landmarks[10].y, 1e-6)
+        pitch_ratio = (landmarks[1].y - landmarks[10].y) / face_height
+        return FaceMotion((left_eye + right_eye) / 2, None, yaw_ratio, pitch_ratio)
 
     def close(self) -> None:
         self._mesh.close()
@@ -68,3 +67,38 @@ def _eye_aspect_ratio(landmarks: object, indices: tuple[int, int, int, int, int,
     )
     horizontal = 2 * hypot(points[0].x - points[3].x, points[0].y - points[3].y)
     return vertical / max(horizontal, 1e-6)
+
+
+def relative_head_action(
+    motion: FaceMotion, neutral_yaw: float, neutral_pitch: float
+) -> TurnDirection | None:
+    if motion.yaw_ratio is None or motion.pitch_ratio is None:
+        return motion.turn_direction
+    yaw_delta = motion.yaw_ratio - neutral_yaw
+    pitch_delta = motion.pitch_ratio - neutral_pitch
+    yaw_strength = abs(yaw_delta) / 0.055
+    pitch_strength = abs(pitch_delta) / 0.045
+    if max(yaw_strength, pitch_strength) < 1.0:
+        return None
+    if yaw_strength >= pitch_strength:
+        return TurnDirection.LEFT if yaw_delta < 0 else TurnDirection.RIGHT
+    return TurnDirection.UP if pitch_delta < 0 else TurnDirection.DOWN
+
+
+def matches_required_head_action(
+    motion: FaceMotion,
+    neutral_yaw: float,
+    neutral_pitch: float,
+    required_action: TurnDirection,
+) -> bool:
+    if motion.yaw_ratio is None or motion.pitch_ratio is None:
+        return motion.turn_direction == required_action
+    yaw_delta = motion.yaw_ratio - neutral_yaw
+    pitch_delta = motion.pitch_ratio - neutral_pitch
+    thresholds = {
+        TurnDirection.LEFT: yaw_delta <= -0.05,
+        TurnDirection.RIGHT: yaw_delta >= 0.05,
+        TurnDirection.UP: pitch_delta <= -0.02,
+        TurnDirection.DOWN: pitch_delta >= 0.02,
+    }
+    return thresholds[required_action]

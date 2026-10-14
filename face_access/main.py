@@ -15,14 +15,18 @@ from fastapi.staticfiles import StaticFiles
 from face_access.config import Settings, settings
 from face_access.database import Database
 from face_access.liveness import ChallengeStatus, LivenessChallenge, MotionObservation
-from face_access.matching import encode_embedding, find_best_match
+from face_access.matching import encode_embedding, find_best_candidate
 from face_access.model_backends import (
     BackendUnavailableError,
     FaceModelBackend,
     UnavailableBackend,
     create_backend,
 )
-from face_access.motion import MediaPipeMotionAnalyzer, MotionAnalyzer
+from face_access.motion import (
+    MediaPipeMotionAnalyzer,
+    MotionAnalyzer,
+    matches_required_head_action,
+)
 from face_access.schemas import (
     AdminResponse,
     BootstrapRequest,
@@ -292,6 +296,14 @@ def create_app(
             "challenge": None,
             "eye_closed": False,
             "blink_at": None,
+            "observed_actions": [],
+            "match_image": None,
+            "match_quality": -1.0,
+            "neutral_yaw": None,
+            "neutral_pitch": None,
+            "action_candidate": None,
+            "action_candidate_frames": 0,
+            "last_pose_delta": None,
             "created_at": now,
             "result": None,
         }
@@ -317,41 +329,113 @@ def create_app(
                 "challenge_id": challenge_id,
                 "status": "waiting_for_face",
                 "message": "未检测到人脸" if not detections else "画面中只能有一张人脸",
+                "detection_count": len(detections),
             }
         now = monotonic()
         challenge = attempt["challenge"]
         if challenge is None:
             challenge = LivenessChallenge.create(
-                now, app_settings.active_liveness_timeout_seconds
+                now,
+                app_settings.active_liveness_timeout_seconds,
+                require_head_action=True,
             )
             attempt["challenge"] = challenge
         motion = motion_analyzer.analyze(image)
         blink_detected = False
         turn_direction = None
+        previous_status = challenge.status
         if motion is not None:
             if motion.eye_aspect_ratio <= 0.18:
                 attempt["eye_closed"] = True
             elif attempt["eye_closed"] and motion.eye_aspect_ratio >= 0.21:
                 blink_detected = True
                 attempt["eye_closed"] = False
-            turn_direction = motion.turn_direction
-        previous_status = challenge.status
+            if (
+                previous_status == ChallengeStatus.WAITING_FOR_BLINK
+                and motion.yaw_ratio is not None
+                and motion.pitch_ratio is not None
+            ):
+                neutral_yaw = attempt["neutral_yaw"]
+                neutral_pitch = attempt["neutral_pitch"]
+                attempt["neutral_yaw"] = (
+                    motion.yaw_ratio
+                    if not isinstance(neutral_yaw, float)
+                    else neutral_yaw * 0.8 + motion.yaw_ratio * 0.2
+                )
+                attempt["neutral_pitch"] = (
+                    motion.pitch_ratio
+                    if not isinstance(neutral_pitch, float)
+                    else neutral_pitch * 0.8 + motion.pitch_ratio * 0.2
+                )
+            elif previous_status == ChallengeStatus.WAITING_FOR_ACTION:
+                neutral_yaw = attempt["neutral_yaw"]
+                neutral_pitch = attempt["neutral_pitch"]
+                if isinstance(neutral_yaw, float) and isinstance(neutral_pitch, float):
+                    candidate = (
+                        challenge.required_turn
+                        if matches_required_head_action(
+                            motion,
+                            neutral_yaw,
+                            neutral_pitch,
+                            challenge.required_turn,
+                        )
+                        else None
+                    )
+                    if motion.yaw_ratio is not None and motion.pitch_ratio is not None:
+                        attempt["last_pose_delta"] = {
+                            "yaw": round(motion.yaw_ratio - neutral_yaw, 4),
+                            "pitch": round(motion.pitch_ratio - neutral_pitch, 4),
+                        }
+                else:
+                    candidate = motion.turn_direction
+                if candidate == attempt["action_candidate"]:
+                    attempt["action_candidate_frames"] = int(attempt["action_candidate_frames"]) + 1
+                else:
+                    attempt["action_candidate"] = candidate
+                    attempt["action_candidate_frames"] = 1 if candidate is not None else 0
+                if candidate is not None:
+                    observed_actions = attempt["observed_actions"]
+                    if not observed_actions or observed_actions[-1] != candidate:
+                        observed_actions.append(candidate)
+                if int(attempt["action_candidate_frames"]) >= 2:
+                    turn_direction = candidate
+            if turn_direction is not None:
+                observed_actions = attempt["observed_actions"]
+                if not observed_actions or observed_actions[-1] != turn_direction:
+                    observed_actions.append(turn_direction)
+        if (
+            previous_status == ChallengeStatus.WAITING_FOR_BLINK
+            and motion is not None
+            and motion.eye_aspect_ratio >= 0.21
+        ):
+            match_quality = detections[0].confidence + min(motion.eye_aspect_ratio, 0.3)
+            if match_quality > float(attempt["match_quality"]):
+                attempt["match_image"] = image
+                attempt["match_quality"] = match_quality
         challenge_status = challenge.observe(
             MotionObservation(blink_detected, turn_direction, now)
         )
         if (
             previous_status == ChallengeStatus.WAITING_FOR_BLINK
-            and challenge_status == ChallengeStatus.WAITING_FOR_TURN
+            and challenge_status != ChallengeStatus.WAITING_FOR_BLINK
         ):
             attempt["blink_at"] = now
         elapsed_seconds = now - challenge.started_at_seconds
         response: dict[str, object] = {
             "challenge_id": challenge_id,
             "status": challenge_status,
-            "required_turn": challenge.required_turn,
+            "required_turn": challenge.required_turn if challenge.require_head_action else None,
+            "required_action": challenge.required_turn if challenge.require_head_action else None,
             "blink_detected": blink_detected,
             "timeout_seconds": challenge.timeout_seconds,
             "remaining_seconds": max(0.0, challenge.timeout_seconds - elapsed_seconds),
+            "face_detection": {
+                "x": detections[0].x,
+                "y": detections[0].y,
+                "width": detections[0].width,
+                "height": detections[0].height,
+                "confidence": detections[0].confidence,
+            },
         }
         if challenge_status not in {ChallengeStatus.PASSED, ChallengeStatus.FAILED}:
             return response
@@ -365,7 +449,15 @@ def create_app(
             if pad_score < app_settings.passive_liveness_threshold:
                 failure_reason = "passive_liveness_failed"
             else:
-                probe = model_backend.extract_embedding(image, detections[0])
+                match_image = attempt["match_image"]
+                match_detections = (
+                    model_backend.detect_faces(match_image)
+                    if isinstance(match_image, bytes)
+                    else detections
+                )
+                matching_image = match_image if len(match_detections) == 1 else image
+                matching_face = match_detections[0] if len(match_detections) == 1 else detections[0]
+                probe = model_backend.extract_embedding(matching_image, matching_face)
                 with database.connect() as connection:
                     templates = connection.execute(
                         """
@@ -375,15 +467,14 @@ def create_app(
                           AND people.status = 'active' AND people.deleted_at IS NULL
                         """
                     ).fetchall()
-                match = find_best_match(
+                match = find_best_candidate(
                     probe,
                     ((row["person_id"], row["embedding"]) for row in templates),
-                    app_settings.similarity_threshold,
                 )
-                if match is None:
+                similarity = match.similarity if match is not None else None
+                if match is None or match.similarity < app_settings.similarity_threshold:
                     failure_reason = "face_not_recognized"
                 else:
-                    similarity = match.similarity
                     with database.connect() as connection:
                         person = connection.execute(
                             "SELECT person_id, name, operation_level FROM people WHERE person_id = ?",
@@ -395,12 +486,23 @@ def create_app(
         snapshot_path.write_bytes(image)
         duration_ms = round((now - challenge.started_at_seconds) * 1000)
         blink_at = attempt["blink_at"]
-        stage_timings: dict[str, int] = {"active_liveness_ms": duration_ms}
+        stage_timings: dict[str, object] = {
+            "active_liveness_ms": duration_ms,
+            "liveness_mode": "blink_and_random_head_action",
+            "required_action": challenge.required_turn,
+            "observed_actions": attempt["observed_actions"],
+            "matching_frame": "best_open_eye_pre_blink",
+            "neutral_head_pose": {
+                "yaw": attempt["neutral_yaw"],
+                "pitch": attempt["neutral_pitch"],
+            },
+            "final_pose_delta": attempt["last_pose_delta"],
+        }
         if isinstance(blink_at, float):
             stage_timings["blink_ms"] = round(
                 (blink_at - challenge.started_at_seconds) * 1000
             )
-            stage_timings["turn_ms"] = round((now - blink_at) * 1000)
+            stage_timings["action_ms"] = round((now - blink_at) * 1000)
         with database.connect() as connection:
             connection.execute(
                 """
@@ -496,6 +598,7 @@ def create_app(
             "pad_score",
             "similarity",
             "duration_ms",
+            "stage_timings_json",
             "model_backend",
             "model_version",
         ]

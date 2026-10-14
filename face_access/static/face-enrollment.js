@@ -73,7 +73,7 @@ function updateCaptureView() {
   document.querySelector("#capture-list").replaceChildren(...items);
   captureButton.disabled = !enrollmentStream || completedCount === capturePoses.length;
   enrollmentSubmit.disabled = enrollmentMode === "camera"
-    ? completedCount < 3
+    ? completedCount < capturePoses.length
     : !enrollmentForm.face_photos.files.length;
 }
 

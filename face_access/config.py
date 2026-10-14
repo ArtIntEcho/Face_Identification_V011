@@ -11,7 +11,7 @@ class Settings:
     model_backend: str = "onnxruntime"
     model_dir: Path = Path("models/hailo8-face")
     passive_liveness_threshold: float = 0.80
-    similarity_threshold: float = 0.75 # 0.45 -> 0.75
+    similarity_threshold: float = 0.70
     active_liveness_timeout_seconds: float = 15.0
 
     @property

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,12 +7,14 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/face-enrollment.css">
   <link rel="stylesheet" href="/realtime-auth.css">
+  <link rel="stylesheet" href="/controls.css">
   <style>[hidden] { display: none !important; }</style>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">FA</span><div><strong>Face Access</strong><small>工业 AI 助手门禁</small></div></div>
     <div class="system-status"><span id="status-dot" class="status-dot"></span><span id="backend-status">正在检查模型</span></div>
+    <label class="language-control"><span>语言</span><select id="language-select" aria-label="语言"><option value="zh">中文</option><option value="en">English</option><option value="de">Deutsch</option></select></label>
     <button id="login-open" class="button secondary">管理员登录</button>
   </header>
 
@@ -26,6 +28,7 @@
     <section id="authenticate" class="view active auth-layout">
       <div class="camera-stage">
         <video id="camera" autoplay muted playsinline></video>
+        <canvas id="detection-overlay" aria-hidden="true"></canvas>
         <div id="camera-placeholder" class="camera-placeholder">
           <span class="camera-icon">◎</span>
           <strong>摄像头尚未启动</strong>
@@ -37,13 +40,14 @@
       <aside class="auth-panel">
         <p class="eyebrow">ACTIVE CHALLENGE</p>
         <h1>人脸身份认证</h1>
-        <p class="muted">稳定检测到单张人脸后，需在 15 秒内完成眨眼和随机方向转头。</p>
+        <p class="muted">稳定检测到单张人脸后，依次完成眨眼、随机头部动作和授权人员比对。</p>
         <ol class="challenge-list">
-          <li><span>1</span><div><strong>眨眼</strong><small>保持正对摄像头并自然眨眼</small></div></li>
-          <li><span>2</span><div><strong>随机转头</strong><small>系统将要求向左或向右转头</small></div></li>
-          <li><span>3</span><div><strong>身份比对</strong><small>在授权人员库中进行 1:N 检索</small></div></li>
+          <li><span>1</span><div><strong>活体检测</strong><small>保持正对摄像头并自然眨眼一次</small></div></li>
+          <li><span>2</span><div><strong>随机头部动作</strong><small>系统从左转、右转、抬头和低头中随机选择</small></div></li>
+          <li><span>3</span><div><strong>授权人员比对</strong><small>活体通过后使用正面帧进行 1:N 检索</small></div></li>
         </ol>
         <div id="auth-message" class="notice">模型后端就绪后可进行正式认证。</div>
+        <label class="overlay-control"><input id="detection-overlay-toggle" type="checkbox" checked><span>显示检测框和置信度</span></label>
         <button id="auth-retry" class="button primary wide" hidden>立即重试</button>
         <button id="camera-start" class="button primary wide">启动摄像头</button>
         <button id="camera-stop" class="button secondary wide" hidden>关闭摄像头</button>
@@ -75,6 +79,7 @@
   <dialog id="enroll-dialog" class="enroll-dialog">
     <form id="enroll-form" class="dialog-form"><div class="dialog-head"><div><p class="eyebrow">FACE ENROLLMENT</p><h2>注册人脸模板</h2></div><button type="button" class="icon-button close" aria-label="关闭">×</button></div><label>授权人员<select name="person_id" required></select></label><div class="enroll-modes" role="tablist" aria-label="采集方式"><button id="enroll-mode-camera" type="button" class="enroll-mode active" role="tab" aria-selected="true">现场采集</button><button id="enroll-mode-upload" type="button" class="enroll-mode" role="tab" aria-selected="false">上传照片</button></div><section id="enroll-camera-panel" class="enroll-camera-panel"><div class="capture-stage"><video id="enroll-camera" autoplay muted playsinline></video><div id="enroll-camera-placeholder" class="capture-placeholder"><strong>准备现场采集</strong><span>启动后按姿态提示依次拍摄</span></div><div class="capture-guide" aria-hidden="true"></div></div><div class="capture-console"><p class="eyebrow">当前姿态</p><strong id="capture-pose">正面平视</strong><span id="capture-hint">脸部居中，保持自然表情</span><div class="capture-actions"><button id="enroll-camera-start" type="button" class="button secondary">启动摄像头</button><button id="enroll-capture" type="button" class="button primary" disabled>拍摄</button></div></div><div id="capture-list" class="capture-list" aria-label="已采集照片"></div></section><label id="enroll-upload-panel" class="upload-zone" hidden><strong>选择 1–10 张人脸照片</strong><span>系统逐张检测，并反馈无法使用的照片</span><input name="face_photos" type="file" accept="image/jpeg,image/png" multiple></label><p id="enroll-result" class="error" aria-live="polite"></p><button id="enroll-submit" class="button primary wide" disabled>生成模板</button></form>
   </dialog>
+  <script src="/i18n.js"></script>
   <script src="/app.js"></script>
   <script src="/camera-controls.js"></script>
   <script src="/realtime-auth.js"></script>
