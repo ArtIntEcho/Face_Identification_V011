@@ -12,6 +12,7 @@ from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Response, Upl
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from face_access.camera import CameraManager, CameraUnavailableError
 from face_access.config import Settings, settings
 from face_access.database import Database
 from face_access.liveness import ChallengeStatus, LivenessChallenge, MotionObservation
@@ -42,6 +43,7 @@ def create_app(
     app_settings: Settings = settings,
     model_backend: FaceModelBackend | None = None,
     motion_analyzer: MotionAnalyzer | None = None,
+    camera_manager: CameraManager | None = None,
 ) -> FastAPI:
     database = Database(app_settings.database_path)
     backend_error: str | None = None
@@ -52,12 +54,25 @@ def create_app(
             model_backend = UnavailableBackend()
             backend_error = str(error)
     motion_analyzer = motion_analyzer or MediaPipeMotionAnalyzer()
+    if app_settings.camera_mode not in {"browser", "server"}:
+        raise ValueError("camera_mode must be 'browser' or 'server'")
+    if app_settings.camera_mode == "server" and camera_manager is None:
+        camera_manager = CameraManager(
+            device=app_settings.camera_device,
+            width=app_settings.camera_width,
+            height=app_settings.camera_height,
+            fps=app_settings.camera_fps,
+        )
     attempts: dict[str, dict[str, object]] = {}
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         database.initialize()
+        if camera_manager is not None:
+            camera_manager.start()
         yield
+        if camera_manager is not None:
+            camera_manager.stop()
         motion_analyzer.close()
 
     application = FastAPI(title=app_settings.app_name, lifespan=lifespan)
@@ -82,14 +97,55 @@ def create_app(
         return AdminResponse(**dict(row))
 
     @application.get("/api/health")
-    def health() -> dict[str, str | bool | None]:
+    def health() -> dict[str, object]:
+        camera_status = camera_manager.status() if camera_manager is not None else None
         return {
             "status": "ok",
             "model_backend": model_backend.name,
             "model_backend_version": model_backend.version,
             "model_backend_available": model_backend.available,
             "model_backend_error": backend_error,
+            "camera_mode": app_settings.camera_mode,
+            "camera_available": (
+                camera_status.frame_available if camera_status is not None else None
+            ),
+            "camera_error": camera_status.error if camera_status is not None else None,
         }
+
+    @application.get("/api/camera/status")
+    def camera_status() -> dict[str, object]:
+        if camera_manager is None:
+            return {"mode": "browser", "available": None}
+        current = camera_manager.status()
+        return {
+            "mode": "server",
+            "running": current.running,
+            "available": current.frame_available,
+            "device": current.device,
+            "width": current.width,
+            "height": current.height,
+            "error": current.error,
+        }
+
+    @application.get("/api/camera/stream")
+    def camera_stream() -> StreamingResponse:
+        if camera_manager is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Server camera mode is not enabled")
+        return StreamingResponse(
+            camera_manager.mjpeg_frames(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @application.get("/api/camera/frame")
+    def camera_frame() -> Response:
+        if camera_manager is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Server camera mode is not enabled")
+        try:
+            image = camera_manager.read_jpeg()
+        except CameraUnavailableError as error:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
+        return Response(content=image, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
     @application.post("/api/auth/bootstrap", response_model=AdminResponse, status_code=201)
     def bootstrap(payload: BootstrapRequest) -> AdminResponse:
@@ -315,14 +371,22 @@ def create_app(
 
     @application.post("/api/authentication/challenges/{challenge_id}/frames")
     async def authenticate_frame(
-        challenge_id: str, frame: UploadFile = File(...)
+        challenge_id: str, frame: UploadFile | None = File(default=None)
     ) -> dict[str, object]:
         attempt = attempts.get(challenge_id)
         if attempt is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Authentication challenge not found")
         if attempt["result"] is not None:
             return attempt["result"]  # type: ignore[return-value]
-        image = await frame.read()
+        if camera_manager is not None:
+            try:
+                image = camera_manager.read_jpeg()
+            except CameraUnavailableError as error:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
+        elif frame is not None:
+            image = await frame.read()
+        else:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "A camera frame is required")
         detections = model_backend.detect_faces(image)
         if len(detections) != 1:
             return {

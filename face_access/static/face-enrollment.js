@@ -15,6 +15,7 @@ async function uploadFacePhotos(personId, files) {
 const enrollmentDialog = document.querySelector("#enroll-dialog");
 const enrollmentForm = document.querySelector("#enroll-form");
 const enrollmentVideo = document.querySelector("#enroll-camera");
+const enrollmentServerImage = document.querySelector("#enroll-server-camera");
 const enrollmentSubmit = document.querySelector("#enroll-submit");
 const captureButton = document.querySelector("#enroll-capture");
 const enrollmentCaptureCanvas = document.createElement("canvas");
@@ -31,9 +32,14 @@ let capturedPhotos = Array(capturePoses.length).fill(null);
 let previewUrls = [];
 
 function stopEnrollmentCamera() {
-  if (enrollmentStream) enrollmentStream.getTracks().forEach((track) => track.stop());
+  if (typeof MediaStream !== "undefined" && enrollmentStream instanceof MediaStream) {
+    enrollmentStream.getTracks().forEach((track) => track.stop());
+  }
   enrollmentStream = null;
   enrollmentVideo.srcObject = null;
+  enrollmentVideo.hidden = false;
+  enrollmentServerImage.removeAttribute("src");
+  enrollmentServerImage.hidden = true;
   document.querySelector("#enroll-camera-placeholder").hidden = false;
   document.querySelector("#enroll-camera-start").textContent = "启动摄像头";
   captureButton.disabled = true;
@@ -97,12 +103,19 @@ document.querySelector("#enroll-camera-start").addEventListener("click", async (
   }
   const result = document.querySelector("#enroll-result");
   try {
-    enrollmentStream = await window.enrollmentGetUserMedia({
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
-    enrollmentVideo.srcObject = enrollmentStream;
-    await enrollmentVideo.play();
+    if (window.faceCameraMode === "server") {
+      enrollmentStream = { server: true };
+      enrollmentVideo.hidden = true;
+      enrollmentServerImage.src = `/api/camera/stream?t=${Date.now()}`;
+      enrollmentServerImage.hidden = false;
+    } else {
+      enrollmentStream = await window.enrollmentGetUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      enrollmentVideo.srcObject = enrollmentStream;
+      await enrollmentVideo.play();
+    }
     document.querySelector("#enroll-camera-placeholder").hidden = true;
     document.querySelector("#enroll-camera-start").textContent = "关闭摄像头";
     result.textContent = "";
@@ -115,14 +128,28 @@ document.querySelector("#enroll-camera-start").addEventListener("click", async (
 
 captureButton.addEventListener("click", async () => {
   const poseIndex = capturedPhotos.findIndex((photo) => !photo);
-  if (!enrollmentVideo.videoWidth || poseIndex === -1) return;
-  enrollmentCaptureCanvas.width = enrollmentVideo.videoWidth;
-  enrollmentCaptureCanvas.height = enrollmentVideo.videoHeight;
-  enrollmentCaptureCanvas.getContext("2d").drawImage(enrollmentVideo, 0, 0);
-  const blob = await new Promise((resolve) => enrollmentCaptureCanvas.toBlob(resolve, "image/jpeg", 0.92));
-  if (!blob) return;
-  capturedPhotos[poseIndex] = new File([blob], `camera-${poseIndex + 1}.jpg`, { type: "image/jpeg" });
-  updateCaptureView();
+  if (poseIndex === -1) return;
+  const result = document.querySelector("#enroll-result");
+  try {
+    let blob;
+    if (window.faceCameraMode === "server") {
+      const response = await fetch(`/api/camera/frame?t=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`无法获取摄像头画面 (${response.status})`);
+      blob = await response.blob();
+    } else {
+      if (!enrollmentVideo.videoWidth) return;
+      enrollmentCaptureCanvas.width = enrollmentVideo.videoWidth;
+      enrollmentCaptureCanvas.height = enrollmentVideo.videoHeight;
+      enrollmentCaptureCanvas.getContext("2d").drawImage(enrollmentVideo, 0, 0);
+      blob = await new Promise((resolve) => enrollmentCaptureCanvas.toBlob(resolve, "image/jpeg", 0.92));
+    }
+    if (!blob) return;
+    capturedPhotos[poseIndex] = new File([blob], `camera-${poseIndex + 1}.jpg`, { type: "image/jpeg" });
+    result.textContent = "";
+    updateCaptureView();
+  } catch (error) {
+    result.textContent = error.message;
+  }
 });
 
 document.querySelector("#capture-list").addEventListener("click", (event) => {
@@ -167,7 +194,7 @@ document.querySelector("#enroll-open").addEventListener("click", async () => {
   const form = document.querySelector("#enroll-form");
   document.querySelector("#enroll-result").textContent = "";
   try {
-    if (document.querySelector("#camera").srcObject) document.querySelector("#camera-stop").click();
+    if (window.faceCameraIsActive()) document.querySelector("#camera-stop").click();
     const response = await fetch("/api/people", { credentials: "same-origin" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "无法读取授权人员");

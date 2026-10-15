@@ -24,6 +24,7 @@ models/**/*.tflite
 models/**/*.pth
 models/**/*.pt
 models/**/*.zip
+/models.zip
 
 # Local configuration and secrets
 .env

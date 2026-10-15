@@ -1,4 +1,5 @@
 const authVideo = document.querySelector("#camera");
+const authServerImage = document.querySelector("#server-camera");
 const authMessage = document.querySelector("#auth-message");
 const faceState = document.querySelector("#face-state");
 const timer = document.querySelector("#timer");
@@ -23,9 +24,12 @@ function renderFaceDetection(detection) {
   detectionOverlay.height = displayHeight;
   context.clearRect(0, 0, displayWidth, displayHeight);
   if (!detectionOverlayToggle.checked || !detection || !captureCanvas.width) return;
-  const scale = Math.max(displayWidth / captureCanvas.width, displayHeight / captureCanvas.height);
-  const offsetX = (displayWidth - captureCanvas.width * scale) / 2;
-  const offsetY = (displayHeight - captureCanvas.height * scale) / 2;
+  const sourceWidth = captureCanvas.width || authServerImage.naturalWidth;
+  const sourceHeight = captureCanvas.height || authServerImage.naturalHeight;
+  if (!sourceWidth || !sourceHeight) return;
+  const scale = Math.max(displayWidth / sourceWidth, displayHeight / sourceHeight);
+  const offsetX = (displayWidth - sourceWidth * scale) / 2;
+  const offsetY = (displayHeight - sourceHeight * scale) / 2;
   const width = detection.width * scale;
   const height = detection.height * scale;
   const x = displayWidth - offsetX - detection.x * scale - width;
@@ -120,18 +124,22 @@ async function runAuthentication(generation) {
     const startResponse = await fetch("/api/authentication/challenges", { method: "POST" });
     const challenge = await startResponse.json();
     if (!startResponse.ok) throw new Error(challenge.detail || "无法创建认证挑战");
-    while (generation === authenticationGeneration && authVideo.srcObject) {
-      const blob = await captureFrame();
-      if (!blob) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        continue;
+    while (generation === authenticationGeneration && window.faceCameraIsActive()) {
+      const request = { method: "POST" };
+      if (window.faceCameraMode !== "server") {
+        const blob = await captureFrame();
+        if (!blob) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          continue;
+        }
+        const body = new FormData();
+        body.append("frame", blob, "camera.jpg");
+        request.body = body;
       }
-      const body = new FormData();
-      body.append("frame", blob, "camera.jpg");
-      const response = await fetch(`/api/authentication/challenges/${challenge.challenge_id}/frames`, {
-        method: "POST",
-        body,
-      });
+      const response = await fetch(
+        `/api/authentication/challenges/${challenge.challenge_id}/frames`,
+        request,
+      );
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || "认证帧处理失败");
       renderAuthenticationState(payload);

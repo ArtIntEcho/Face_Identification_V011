@@ -1,6 +1,6 @@
 # Face Access
 
-Face Access is a local face-authentication and access-control prototype for Windows PCs. It combines SCRFD face detection, 512-dimensional ArcFace templates, MediaPipe active liveness, dual MiniFASNet passive liveness, 1:N identity search, audit logging, and a local web console.
+Face Access is a local face-authentication and access-control prototype for Windows PCs and Debian edge devices. It combines SCRFD face detection, 512-dimensional ArcFace templates, MediaPipe active liveness, dual MiniFASNet passive liveness, 1:N identity search, audit logging, and a local web console.
 
 ## Features
 
@@ -16,8 +16,8 @@ Face Access is a local face-authentication and access-control prototype for Wind
 
 ## Requirements
 
-- Windows 10 or Windows 11
-- Python 3.12
+- Windows 10/11 or Debian 12 x86_64
+- Python 3.11 or newer
 - A webcam
 - The ONNX model files listed under [Models](#models)
 
@@ -37,6 +37,45 @@ py -3.12 -m venv .venv
 ```
 
 Open `http://127.0.0.1:8000` in Microsoft Edge or another modern browser. On first use, initialize the level-A administrator, log in, and add an authorized person.
+
+### Debian 12
+
+Create a new Linux virtual environment instead of copying `.venv` from Windows. Common runtime libraries can be installed with:
+
+```bash
+sudo apt update
+sudo apt install libgl1 libglib2.0-0 libgomp1 v4l-utils
+```
+
+Configure the camera attached to the edge device:
+
+```bash
+export FACE_ACCESS_CAMERA_MODE=server
+export FACE_ACCESS_CAMERA_DEVICE=/dev/video0
+export FACE_ACCESS_CAMERA_WIDTH=1280
+export FACE_ACCESS_CAMERA_HEIGHT=720
+export FACE_ACCESS_CAMERA_FPS=15
+```
+
+Start one Uvicorn worker. Multiple workers must not compete for the same camera device:
+
+```bash
+.venv/bin/python -m uvicorn face_access.main:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+Open `http://debian-host:8000`. In server mode, OpenCV captures the edge device camera and the browser displays an MJPEG preview, so the browser does not call `getUserMedia` and LAN HTTP works. HTTPS is still strongly recommended because preview frames and biometric results are sensitive.
+
+The default `browser` camera mode remains available for Windows development. Browser mode requires HTTPS or a `localhost` URL because it uses `getUserMedia`.
+
+Server-camera environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `FACE_ACCESS_CAMERA_MODE` | `browser` | Set to `server` for OpenCV capture |
+| `FACE_ACCESS_CAMERA_DEVICE` | `/dev/video0` | V4L2 camera path |
+| `FACE_ACCESS_CAMERA_WIDTH` | `1280` | Requested frame width |
+| `FACE_ACCESS_CAMERA_HEIGHT` | `720` | Requested frame height |
+| `FACE_ACCESS_CAMERA_FPS` | `15` | Requested capture frame rate |
 
 ## Enrollment
 
